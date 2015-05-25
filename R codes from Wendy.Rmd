@@ -11,6 +11,258 @@ output:
   beamer_presentation: default
 ---
 
+```{r,cache=FALSE}
+# Set some global knitr options
+library("knitr")
+opts_chunk$set(tidy=TRUE, size='tiny',tidy.opts=list(blank=FALSE, width.cutoff=80), cache=TRUE, messages=FALSE)
+```
+
+## import all the data
+```{r}
+setwd("E:/Course2015Spring/BIOST578/Project/FInal_Project_Metabolomics/Data")
+
+#read in subject demographics
+library(xlsx)
+demographics = read.xlsx("Subjects.xlsx",1)
+colnames(demographics) = c("ID","baseline","order","age","sex","weight","height","bmi","bodyfat","notes")
+summary(demographics)
+
+#read in sample position and glucose
+sample = read.csv("Glance_global_key_samples.csv", header=T, sep=",")
+colnames(sample)
+sample = sample[,-4]
+
+#read in negative results
+neg = read.csv("Neg.csv", header=T, sep=",", na.strings=".")
+dim(neg)
+sum(is.na(neg))
+#impute all NA's with 1
+neg[is.na(neg)] = 1
+sum(neg == 1)
+
+#read in positive results
+pos = read.csv("Pos.csv", header=T, sep=",", na.strings=".")
+dim(pos)
+sum(is.na(pos))
+pos[is.na(pos)] = 1
+sum(pos == 1)
+
+#Save RData
+save.image(file="Glance.RData")
+```
+
+
+##Combine the dataset
+```{r}
+colnames(sample)
+sample = sample[,1:5]
+sample.QC = sample[!is.na(sample[,1]),]
+dim(sample.QC)
+neg$ID = sample.QC$id
+pos$ID = sample.QC$id
+
+sample.QC = sample.QC[which(substr(sample.QC$id,1,2)!="QC"),]
+neg.QC = neg[which(substr(sample.QC$id,1,2)!="QC"),]
+pos.QC = pos[which(substr(sample.QC$id,1,2)!="QC"),]
+
+#exclude ill person
+sample.QC = sample.QC[which(sample.QC$id!="80013"),]
+neg.QC = neg.QC[which(neg.QC$ID!="80013"),]
+pos.QC = pos.QC[which(pos.QC$ID!="80013"),]
+
+#exclude drop-out
+sample.QC = sample.QC[which(sample.QC$id!="80025"),]
+neg.QC = neg.QC[which(neg.QC$ID!="80025"),]
+pos.QC = pos.QC[which(pos.QC$ID!="80025"),]
+
+```
+now, we have 14 pairs for analyses.
+
+
+##Standardize the data according to placebos
+```{r}
+hist(neg.QC[,2])
+#log-transform all the data
+sample.QC$case <- factor(sample.QC$intervention,levels=c(1,2))
+levels(sample.QC$case) <- c(0,1)
+table(sample.QC$case,sample.QC$intervention)
+
+info = sample.QC[,-c(4:5)]
+marker = neg.QC[,1]
+
+log.neg = log(neg.QC[,2:1530])
+neg.lt = cbind(info,marker,log.neg)
+
+log.pos = log(pos.QC[,2:1516])
+pos.lt = cbind(info,marker,log.pos)
+
+save(demographics, sample.QC, info, marker, neg.lt, pos.lt, file="Glance_logtrans.RData")
+```
+
+```{r}
+info.marker = neg.lt[,1:5]
+
+#normalization
+table(sample.QC$case)
+
+neg.norm <- apply(neg.lt[,6:1531],2,function(x) (x-mean(x[sample.QC$case==0],na.rm=T))/sd(x[sample.QC$case==0],na.rm=T))
+mean(neg.norm[,1][sample.QC$case==0])
+mean(neg.norm[,1][sample.QC$case==1])
+neg.afternorm = cbind(info.marker,neg.norm)
+
+pos.norm <- apply(pos.lt[,6:1517],2,function(x) (x-mean(x[sample.QC$case==0],na.rm=T))/sd(x[sample.QC$case==0],na.rm=T))
+mean(pos.norm[,1][sample.QC$case==0])
+mean(pos.norm[,1][sample.QC$case==1])
+pos.afternorm = cbind(info.marker,pos.norm)
+
+#Save RData
+save(demographics, sample.QC, info.marker, neg.afternorm, pos.afternorm, file="Glance_afternorm.RData")
+```
+
+##check batch effect
+```{r}
+rm(list=ls())
+
+load("Glance_afternorm.RData")
+
+batch.neg<-neg.afternorm
+
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+library(data.table)
+
+
+demo.select = demographics[which(demographics$ID!="80013"),]
+demo.select = demo.select[which(demo.select$ID!="80025"),]
+batch.neg.merge = merge(batch.neg, demo.select, by.x="id", by.y="ID", all=T)
+dim(batch.neg.merge)
+batch.neg.merge = batch.neg.merge[1:28,]
+batch.neg.merge = batch.neg.merge[,-1540]
+batch.neg.merge = batch.neg.merge[,-1532]
+head(batch.neg.merge[,c("id","sex","order","case","age")])
+
+######the plotting didn't work. Move on to PCA anyway.
+
+plotdata.neg<-melt(batch.neg.merge, id=c("id","case","marker","sex","intervention","poisiton","order","age", "weight","height","bmi","bodyfat"))
+p1 <- ggplot(plotdata.neg[plotdata.neg$sex==1,], aes(y=value,x=variable,fill=value)) + geom_tile() + scale_fill_gradient(low="lightblue", high="darkblue")+ xlab("metabolites") + ylab("obs")+theme(axis.ticks = element_blank(), axis.text.y = element_blank())+ggtitle("genes expression for male")
+p0 <- ggplot(plotdata.neg[plotdata.neg$sex==0,], aes(y=value,x=variable,fill=value)) + geom_tile() + scale_fill_gradient(low="lightblue", high="darkblue")+ xlab("metabolites") + ylab("obs")+theme(axis.ticks = element_blank(), axis.text.y = element_blank())+ggtitle("genes expression for female")
+grid.arrange( p0, p1, ncol=2)
+
+p1 = ggplot(plotdata.neg[plotdata.neg$sex==1,], aes(y=plotdata.neg$value, x=plotdata.neg$variable)) + geom_tile() +ggtitle("genes expression for male")
+
+```
+
+
+#PCA to check batch effects
+```{r}
+library(stats)
+
+#by sex and case
+neg.pr.out = prcomp (neg.afternorm[,6:1531], scale =TRUE)
+neg.pr.out$rotation[1:5,1:5]
+pca.scores.neg = neg.pr.out$x
+rownames(pca.scores.neg) <- neg.afternorm$marker
+info.all = batch.neg.merge[,c("id","case","marker","sex","intervention","poisiton","order","age", "weight","height","bmi","bodyfat")]
+pca.neg.mat = cbind(info.all,pca.scores.neg)
+
+pca.plot.neg = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=as.factor(sex), shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites") + theme(panel.background = element_blank())
+
+pos.pr.out = prcomp(pos.afternorm[,6:1517], scale=TRUE)
+pos.pr.out$rotation[1:5,1:5]
+pca.scores.pos = pos.pr.out$x
+rownames(pca.scores.pos) = pos.afternorm$marker
+pca.pos.mat = cbind(info.all, pca.scores.pos)
+
+pca.plot.pos = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=as.factor(sex), shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites") + theme(panel.background = element_blank())
+
+grid.arrange(pca.plot.neg, pca.plot.pos, ncol=2)
+
+#by order
+pca.plot.neg2 = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=as.factor(order), shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites by order") + theme(panel.background = element_blank())
+
+pca.plot.pos2 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=as.factor(order), shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites by order") + theme(panel.background = element_blank())
+
+grid.arrange(pca.plot.neg2, pca.plot.pos2, ncol=2)
+
+save(demographics, sample.QC, info.marker, neg.afternorm, pos.afternorm, info.all, pca.pos.mat, pca.neg.mat, file="Glance_afternorm_batch.RData")
+```
+
+##Fold change
+```{r}
+rm(list=ls())
+
+setwd("E:/Course2015Spring/BIOST578/Project/FInal_Project_Metabolomics/Data")
+load("Glance_afternorm_batch.RData")
+
+## May not need to do fold change because limma provide log2 FC as part of its output.
+
+FoldChange.neg <- function(neg.afternorm, paired=FALSE, plot.hist=TRUE, 
+    saveoutput=FALSE, outputname="fc.results") 
+{
+    # Read in data, collect groups information
+    neg.afternorm <- editcolnames(neg.afternorm)
+    groups <- factor(inputdata[, 1], levels=unique(inputdata[, 1]))
+    grp_levs <- levels(groups)
+    
+    if (length(grp_levs) > 2) {
+        stop(
+            paste("The number of groups is greater than 2. Use", 
+                " LinearModelFit() instead."
+            )
+        )
+    }
+    # Prepare empty matrices and populate
+    folds <- matrix(NA, nrow=length(grp_levs), 
+        ncol=ncol(inputdata) - 1, 
+        dimnames=list(grp_levs, colnames(inputdata)[2:ncol(inputdata)])
+    )
+    grp_len <- c()
+    for (ii in 1:length(grp_levs)) {
+        grp_len <- c(grp_len, length(which(groups == levels(groups)[ii])))
+    }
+    
+    new_mats <- c()
+    for (ii in 1:length(grp_levs)) {
+        new_mats[ii] <- list(inputdata[which(groups == levels(groups)[ii]), ])
+    }
+    
+    # Perform fold change calculations
+    if (!paired) {
+        submeans <- c()
+        means <- matrix(nrow=length(grp_levs), 
+            ncol=length(colnames(inputdata[, -1])), 
+            dimnames=list(grp_levs, colnames(inputdata[, -1]))
+        )
+        for (ii in 1:length(new_mats)) {
+            submeans[ii] <- list(
+                apply(new_mats[[ii]][, -1], 2, mean, na.rm=TRUE)
+            )
+            means[ii, ] <- submeans[[ii]]
+        }
+        for (ii in 1:length(means[, 1])) {
+            for (jj in 1:length(means[1, ])) {
+                folds[ii, jj] <- means[ii, jj] - means[1, jj]
+            }
+        }
+    } else {
+        folds[1, ] <- 1
+        folds[2, ] <- apply(
+            (new_mats[[2]][, -1] - new_mats[[1]][, -1]), 2, mean, na.rm=TRUE
+        )
+    }
+    
+    # Plot and/or save
+    if (plot.hist) {
+        hist(folds[2, ], breaks=50, xlab="Fold change", main="Histogram")
+    }
+    if (saveoutput) {
+        write.csv(t(folds), paste(c(outputname, ".csv"), collapse=""))
+    }
+    
+    return(t(folds))
+}
+```
 
 
 
