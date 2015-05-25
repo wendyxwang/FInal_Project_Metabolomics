@@ -168,9 +168,15 @@ neg.pr.out$rotation[1:5,1:5]
 pca.scores.neg = neg.pr.out$x
 rownames(pca.scores.neg) <- neg.afternorm$marker
 info.all = batch.neg.merge[,c("id","case","marker","sex","intervention","poisiton","order","age", "weight","height","bmi","bodyfat")]
+info.all$sex = factor(info.all$sex, levels = c(0,1), labels = c("female", "male"))
+info.all$order = factor(info.all$order, levels = c(1,2), labels = c("AB", "BA"))
 pca.neg.mat = cbind(info.all,pca.scores.neg)
 
-pca.plot.neg = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=as.factor(sex), shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites") + theme(panel.background = element_blank())
+table(info.all$sex)
+pca.neg.mat$sex = info.all$sex
+pca.pos.mat$sex = info.all$sex
+
+pca.plot.neg = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=sex, shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites by sex") + theme(panel.background = element_blank())
 
 pos.pr.out = prcomp(pos.afternorm[,6:1517], scale=TRUE)
 pos.pr.out$rotation[1:5,1:5]
@@ -178,34 +184,63 @@ pca.scores.pos = pos.pr.out$x
 rownames(pca.scores.pos) = pos.afternorm$marker
 pca.pos.mat = cbind(info.all, pca.scores.pos)
 
-pca.plot.pos = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=as.factor(sex), shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites") + theme(panel.background = element_blank())
+pca.plot.pos = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=sex, shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites by sex") + theme(panel.background = element_blank())
 
 grid.arrange(pca.plot.neg, pca.plot.pos, ncol=2)
 
 #by order
-pca.plot.neg2 = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=as.factor(order), shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites by order") + theme(panel.background = element_blank())
+table(info.all$order)
 
-pca.plot.pos2 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=as.factor(order), shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites by order") + theme(panel.background = element_blank())
+pca.neg.mat$order = info.all$order
+pca.pos.mat$order = info.all$order
+
+pca.plot.neg2 = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=order, shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites by order") + theme(panel.background = element_blank())
+
+pca.plot.pos2 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=order, shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites by order") + theme(panel.background = element_blank())
 
 grid.arrange(pca.plot.neg2, pca.plot.pos2, ncol=2)
 
 #by bmi
 info.all$bmi_c = NULL
 info.all$bmi_c = ifelse(info.all$bmi>29.9, 1, 0)
+info.all$bmi_c = factor(info.all$bmi_c, levels = c(0,1), labels = c("overweight", "obese"))
 table(info.all$bmi_c)
 
 pca.neg.mat$bmi_c = info.all$bmi_c
 pca.pos.mat$bmi_c = info.all$bmi_c
 
-pca.plot.neg3 = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=as.factor(bmi_c), shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites by order") + theme(panel.background = element_blank())
+pca.plot.neg3 = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=bmi_c, shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites by BMI") + theme(panel.background = element_blank())
 
-pca.plot.pos3 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=as.factor(bmi_c), shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites by order") + theme(panel.background = element_blank())
+pca.plot.pos3 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=bmi_c, shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites by BMI") + theme(panel.background = element_blank())
 
 grid.arrange(pca.plot.neg3, pca.plot.pos3, ncol=2)
 
 #save RData
 save(demographics, sample.QC, info.marker, neg.afternorm, pos.afternorm, info.all, pca.pos.mat, pca.neg.mat, file="Glance_afternorm_batch.RData")
 
+```
+
+##PCA (for visualization?)
+```{r}
+neg.pr.out = prcomp (neg.afternorm[,6:1531], scale =TRUE)
+neg.pr.out$sdev[1:5]
+neg.pr.var = neg.pr.out$sdev^2
+neg.pve = neg.pr.var/sum(neg.pr.var)
+
+pos.pr.out = prcomp(pos.afternorm[,6:1517], scale=TRUE)
+pos.pr.out$sdev[1:5]
+pos.pr.var = pos.pr.out$sdev^2
+pos.pve = pos.pr.var/sum(pos.pr.var)
+
+par(mfrow=c(1,2))
+pve.plot.neg = plot(neg.pve, xlab=" Principal Component ", ylab=" Proportion of Variance Explained", ylim=c(0,1) ,type="b", main="negative metabolites")
+pve.plot.pos = plot(pos.pve, xlab=" Principal Component ", ylab=" Proportion of Variance Explained", ylim=c(0,1) ,type="b", main="positive metabolites")
+
+#cumulative pve
+pve.plot.neg2 = plot(cumsum(neg.pve), xlab=" Principal Component ", ylab =" Cumulative Proportion of Variance Explained ", ylim=c(0,1) , type="b", main="negative metabolites")
+pve.plot.pos2 = plot(cumsum(pos.pve), xlab=" Principal Component ", ylab =" Cumulative Proportion of Variance Explained ", ylim=c(0,1) , type="b", main="positive metabolites")
+
+#no "elbows" for selecting PC's
 ```
 
 ##Fold change
