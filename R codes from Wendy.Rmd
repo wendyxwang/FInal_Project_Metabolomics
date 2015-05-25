@@ -158,6 +158,10 @@ p1 = ggplot(plotdata.neg[plotdata.neg$sex==1,], aes(y=plotdata.neg$value, x=plot
 ```{r}
 library(stats)
 
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+
 #by sex and case
 neg.pr.out = prcomp (neg.afternorm[,6:1531], scale =TRUE)
 neg.pr.out$rotation[1:5,1:5]
@@ -185,7 +189,23 @@ pca.plot.pos2 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=as.factor(order)
 
 grid.arrange(pca.plot.neg2, pca.plot.pos2, ncol=2)
 
+#by bmi
+info.all$bmi_c = NULL
+info.all$bmi_c = ifelse(info.all$bmi>29.9, 1, 0)
+table(info.all$bmi_c)
+
+pca.neg.mat$bmi_c = info.all$bmi_c
+pca.pos.mat$bmi_c = info.all$bmi_c
+
+pca.plot.neg3 = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=as.factor(bmi_c), shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites by order") + theme(panel.background = element_blank())
+
+pca.plot.pos3 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=as.factor(bmi_c), shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites by order") + theme(panel.background = element_blank())
+
+grid.arrange(pca.plot.neg3, pca.plot.pos3, ncol=2)
+
+#save RData
 save(demographics, sample.QC, info.marker, neg.afternorm, pos.afternorm, info.all, pca.pos.mat, pca.neg.mat, file="Glance_afternorm_batch.RData")
+
 ```
 
 ##Fold change
