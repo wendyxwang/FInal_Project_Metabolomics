@@ -243,7 +243,7 @@ pve.plot.pos2 = plot(cumsum(pos.pve), xlab=" Principal Component ", ylab =" Cumu
 #no "elbows" for selecting PC's
 ```
 
-##Fold change
+##Fold change (not yet run)
 ```{r}
 rm(list=ls())
 
@@ -319,8 +319,124 @@ FoldChange.neg <- function(neg.afternorm, paired=FALSE, plot.hist=TRUE,
 }
 ```
 
+## adjut for gender, age and bmi
+```{r}
+library(reshape)
+sub.ma <- neg.afternorm[,5:1531]
+sub.ma.t = t(sub.ma)
+colnames(sub.ma.t) = sub.ma.t[1,]
+sub.ma.t = sub.ma.t[-1,]
+
+sub.info <- info.all
+info.temp <- sub.info
+neg.compound.name = colnames(neg.afternorm)[6:1531]
+
+info.temp$sex <- as.factor(info.temp$sex)
+info.temp$case <- as.factor(info.temp$case)
+info.temp$bmi_c <- as.factor(info.temp$bmi_c)
+info.temp$age <- as.factor(info.temp$age)
+
+#require library
+library(qvalue)
+
+estim.casecont <- function(mylm,info.temp,m){
+  coefs <- summary(mylm)$coef[,1]
+  name.coefs <- names(coefs)
+   # gender #
+  sex.name <- name.coefs[1:length(name.coefs) %in% grep("sex",name.coefs)]
+  sex.name <- unlist(lapply(strsplit(sex.name,"sex"),function(x) x[2]))
+  k <- 1
+  X <- ifelse(as.character(info.temp$sex)==sex.name[k],1,0)
+  if(length(sex.name)>1){
+    for(k in 2:length(sex.name))  X <- cbind(X,ifelse(as.character(info.temp$sex)==sex.name[k],1,0))
+    table(X[,ncol(X)-1],info.temp$sex)
+    table(X[,ncol(X)],info.temp$sex)
+    }
+  # bmi_c #
+  bmi.name <- name.coefs[1:length(name.coefs) %in% grep("bmi",name.coefs)]
+  age.name <- unlist(lapply(strsplit(bmi.name,"bmi"),function(x) x[2]))
+  k <- 1
+  X <- cbind(X,ifelse(as.character(info.temp$bmi_c)==bmi.name[k],1,0))
+  table(X[,ncol(X)],info.temp$bmi_c)
+  # age #
+  age.name <- name.coefs[1:length(name.coefs) %in% grep("age",name.coefs)]
+  age.name <- unlist(lapply(strsplit(age.name,"age"),function(x) x[2]))
+  k <- 1
+  X <- cbind(X,ifelse(as.character(info.temp$age)==age.name[k],1,0))
+  for(k in 2:length(age.name))  X <- cbind(X,ifelse(as.character(info.temp$age)==age.name[k],1,0))
+  table(X[,ncol(X)-1],info.temp$age)
+  table(X[,ncol(X)],info.temp$age)
 
 
+  est.m <- m - coefs[-c(1,2)]%*%t(X)
+  return(est.m)
+}
+
+
+lm.fun <- function(sub.ma.t,sub.info,neg.compound.name){
+  sub.info$sex <- as.factor(sub.info$sex)
+  sub.info$case <- as.factor(sub.info$case)
+  sub.info$bmi_c <- as.factor(sub.info$bmi_c)
+  sub.info$age <- as.factor(sub.info$age)
+  
+  ## linear regression to M with a
+  coef <- pvalue <- NA
+  est.m<-matrix(rep(NA,nrow(sub.ma.t)*ncol(sub.ma.t)),nrow=nrow(sub.ma.t))
+  i <- 1
+  for(i in 1:nrow(sub.ma.t)){
+    m.temp <- as.numeric(sub.ma.t[i,])
+
+    mylm <- lm(m.temp ~ case+sex+bmi_c+age, data=sub.info)
+    coef[i] <- mylm$coef["case1"]
+    pvalue[i] <- summary(mylm)$coef["case1",4]
+    est.m[i,] <- estim.casecont(mylm,sub.info,m.temp)    
+  }
+  p.d <- data.frame(ind=1:length(pvalue),pvalue)
+  q.d <- data.frame(ind=p.d$ind[!is.na(p.d$p)],q=qvalue(na.omit(p.d$p),robust=T)$qvalues)
+  qvalue <- merge(p.d,q.d,by="ind",all.x=T,all.y=T)$q
+
+  result.all <- data.frame(neg.compound.name=neg.compound.name,coef=coef,pvalue=pvalue,qvalue=qvalue)
+  result.all <- result.all[order(result.all$pvalue),]
+#  return(result.all)
+  return(list(result=result.all,est=est.m))  
+}
+
+result<-lm.fun(sub.ma.t,sub.info,neg.compound.name)
+#ls(result)
+neg.est.m<-result[["est"]]
+```
+
+## do the same thing for positive data
+```{r}
+sub.ma <- pos.afternorm[,5:1517]
+sub.ma.t = t(sub.ma)
+colnames(sub.ma.t) = sub.ma.t[1,]
+sub.ma.t = sub.ma.t[-1,]
+
+sub.info <- info.all
+info.temp <- sub.info
+pos.compound.name = colnames(pos.afternorm)[6:1517]
+
+info.temp$sex <- as.factor(info.temp$sex)
+info.temp$case <- as.factor(info.temp$case)
+info.temp$bmi_c <- as.factor(info.temp$bmi_c)
+info.temp$age <- as.factor(info.temp$age)
+
+# estim.casecont and lm.fun is exactly the same function
+
+result<-lm.fun(sub.ma.t,sub.info,pos.compound.name)
+#ls(result)
+pos.est.m<-result[["est"]]
+
+#save RData
+save(demographics, sample.QC, info.marker, neg.afternorm, pos.afternorm, info.all, pca.pos.mat, pca.neg.mat, neg.est.m, pos.est.m, file="Glance_afternorm_batch_lm.RData")
+
+```
+
+##Moderated t-test
+```{r}
+
+```
 
 ## R Markdown
 
