@@ -100,15 +100,27 @@ save(demographics, sample.QC, info, marker, neg.lt, pos.lt, file="Glance_logtran
 ```
 
 ```{r}
+rm(list=ls())
+
+load("Glance_logtrans.RData")
+
 info.marker = neg.lt[,1:5]
 
 #normalization
 table(sample.QC$case)
 
+hist(neg.lt[,6][sample.QC$case==0])
+hist(neg.lt[,6][sample.QC$case==1])
+
 neg.norm <- apply(neg.lt[,6:1531],2,function(x) (x-mean(x[sample.QC$case==0],na.rm=T))/sd(x[sample.QC$case==0],na.rm=T))
 mean(neg.norm[,1][sample.QC$case==0])
 mean(neg.norm[,1][sample.QC$case==1])
 neg.afternorm = cbind(info.marker,neg.norm)
+
+#code check: try a different method and get the same result
+#neg.lt.t = t(neg.lt[,-c(1:5)])
+#neg.norm.t = apply(neg.lt.t, 1, function(x) (x-mean(x[sample.QC$case==0]))/sd(x[sample.QC$case==00]))
+
 
 pos.norm <- apply(pos.lt[,6:1517],2,function(x) (x-mean(x[sample.QC$case==0],na.rm=T))/sd(x[sample.QC$case==0],na.rm=T))
 mean(pos.norm[,1][sample.QC$case==0])
@@ -116,7 +128,8 @@ mean(pos.norm[,1][sample.QC$case==1])
 pos.afternorm = cbind(info.marker,pos.norm)
 
 #Save RData
-save(demographics, sample.QC, info.marker, neg.afternorm, pos.afternorm, file="Glance_afternorm.RData")
+#decided to save non-normalized data for testing
+save(demographics, sample.QC, info.marker, neg.lt, pos.lt, neg.afternorm, pos.afternorm, file="Glance_afternorm.RData")
 ```
 
 ##check batch effect
@@ -142,7 +155,7 @@ batch.neg.merge = batch.neg.merge[,-1540]
 batch.neg.merge = batch.neg.merge[,-1532]
 head(batch.neg.merge[,c("id","sex","order","case","age")])
 
-######the plotting didn't work. Move on to PCA anyway.
+######the following plotting didn't work. Move on to PCA anyway.
 
 plotdata.neg<-melt(batch.neg.merge, id=c("id","case","marker","sex","intervention","poisiton","order","age", "weight","height","bmi","bodyfat"))
 p1 <- ggplot(plotdata.neg[plotdata.neg$sex==1,], aes(y=value,x=variable,fill=value)) + geom_tile() + scale_fill_gradient(low="lightblue", high="darkblue")+ xlab("metabolites") + ylab("obs")+theme(axis.ticks = element_blank(), axis.text.y = element_blank())+ggtitle("genes expression for male")
@@ -174,7 +187,7 @@ pca.neg.mat = cbind(info.all,pca.scores.neg)
 
 table(info.all$sex)
 pca.neg.mat$sex = info.all$sex
-pca.pos.mat$sex = info.all$sex
+
 
 pca.plot.neg = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=sex, shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites by sex") + theme(panel.background = element_blank())
 
@@ -183,6 +196,7 @@ pos.pr.out$rotation[1:5,1:5]
 pca.scores.pos = pos.pr.out$x
 rownames(pca.scores.pos) = pos.afternorm$marker
 pca.pos.mat = cbind(info.all, pca.scores.pos)
+pca.pos.mat$sex = info.all$sex
 
 pca.plot.pos = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=sex, shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites by sex") + theme(panel.background = element_blank())
 
@@ -216,9 +230,10 @@ pca.plot.pos3 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=bmi_c, shape=cas
 grid.arrange(pca.plot.neg3, pca.plot.pos3, ncol=2)
 
 #save RData
-save(demographics, sample.QC, info.marker, neg.afternorm, pos.afternorm, info.all, pca.pos.mat, pca.neg.mat, file="Glance_afternorm_batch.RData")
+save(demographics, sample.QC, info.marker, neg.lt, pos.lt, neg.afternorm, pos.afternorm, info.all, pca.pos.mat, pca.neg.mat, file="Glance_afternorm_batch.RData")
 
 ```
+
 
 ##PCA (for visualization?)
 ```{r}
@@ -319,8 +334,16 @@ FoldChange.neg <- function(neg.afternorm, paired=FALSE, plot.hist=TRUE,
 }
 ```
 
+
+
 ## adjut for gender, age and bmi
 ```{r}
+rm(list=ls())
+
+setwd("E:/Course2015Spring/BIOST578/Project/FInal_Project_Metabolomics/Data")
+load("Glance_afternorm_batch.RData")
+
+
 library(reshape)
 sub.ma <- neg.afternorm[,5:1531]
 sub.ma.t = t(sub.ma)
@@ -404,6 +427,7 @@ lm.fun <- function(sub.ma.t,sub.info,neg.compound.name){
 result<-lm.fun(sub.ma.t,sub.info,neg.compound.name)
 #ls(result)
 neg.est.m<-result[["est"]]
+neg.est.result = result[["result"]]
 ```
 
 ## do the same thing for positive data
@@ -427,15 +451,155 @@ info.temp$age <- as.factor(info.temp$age)
 result<-lm.fun(sub.ma.t,sub.info,pos.compound.name)
 #ls(result)
 pos.est.m<-result[["est"]]
+pos.est.result = result[["result"]]
 
 #save RData
-save(demographics, sample.QC, info.marker, neg.afternorm, pos.afternorm, info.all, pca.pos.mat, pca.neg.mat, neg.est.m, pos.est.m, file="Glance_afternorm_batch_lm.RData")
+save(demographics, sample.QC, info.marker, neg.lt, pos.lt, neg.afternorm, pos.afternorm, info.all, pca.pos.mat, pca.neg.mat, neg.est.m, neg.est.result, pos.est.m, pos.est.result, file="Glance_afternorm_batch_lm.RData")
 
 ```
 
 ##Moderated t-test
 ```{r}
+rownames(neg.est.m) <- colnames(neg.afternorm)[6:1531]
+colnames(neg.est.m) <- neg.afternorm[,5]
 
+rownames(pos.est.m) <- colnames(pos.afternorm)[6:1517]
+colnames(pos.est.m) <- pos.afternorm[,5]
+
+library(limma)
+#negative data
+
+est.m = neg.est.m
+mm <-model.matrix(~0+id+case, data=info.temp)
+mm <- mm[,-7]
+mm <- mm[, -(16:20)]
+mm <- mm[,-13]
+fit <- lmFit(est.m, mm)
+
+ebay <- eBayes(fit)
+top <- topTable(ebay, coef="case1", number=Inf, sort.by="p")
+head(top)
+mean(top$adj.P.Val<0.01)
+summary(top$adj.P.Val)
+summary(top$P.Value)
+hist(top$P.Value, freq=F, main="Histogram of unadjusted p-values", xlab='p-values', breaks=100)
+abline(v=0.05, col=2, lwd=2, lty=2)
+
+neg.top = top
+
+#try neg.lt
+library(reshape)
+sub.ma <- neg.lt[,6:1531]
+sub.ma.t = t(sub.ma)
+colnames(sub.ma.t) = sub.ma.t[1,]
+sub.ma.t = sub.ma.t[-1,]
+
+sub.info <- info.all
+info.temp <- sub.info
+neg.compound.name = colnames(neg.lt)[6:1534]
+
+info.temp$sex <- as.factor(info.temp$sex)
+info.temp$case <- as.factor(info.temp$case)
+info.temp$bmi_c <- as.factor(info.temp$bmi_c)
+info.temp$age <- as.factor(info.temp$age)
+
+est.m = sub.ma.t
+mm <-model.matrix(~0+id+case, data=info.temp)
+mm <- mm[,-7]
+mm <- mm[, -(16:20)]
+mm <- mm[,-13]
+fit <- lmFit(est.m, mm)
+
+ebay <- eBayes(fit)
+top <- topTable(ebay, coef="case1", number=Inf, sort.by="p")
+head(top)
+mean(top$adj.P.Val<0.01)
+summary(top$adj.P.Val)
+summary(top$P.Value)
+hist(top$P.Value, freq=F, main="Histogram of unadjusted p-values", xlab='p-values', breaks=100)
+abline(v=0.05, col=2, lwd=2, lty=2)
+#it's the same
+```
+
+```{r}
+#positive data
+est.m = pos.est.m
+
+fit <- lmFit(est.m, mm)
+
+ebay <- eBayes(fit)
+top <- topTable(ebay, coef="case1", number=Inf, sort.by="p")
+head(top)
+mean(top$adj.P.Val<0.01)
+summary(top$adj.P.Val)
+summary(top$P.Value)
+hist(top$P.Value, freq=F, main="Histogram of unadjusted p-values", xlab='p-values', breaks=100)
+abline(v=0.05, col=2, lwd=2, lty=2)
+
+hist(top$adj.P.Val, freq=F)
+
+pos.top = top
+
+
+save(demographics, sample.QC, info.marker, neg.lt, pos.lt, neg.afternorm, pos.afternorm, info.all, pca.pos.mat, pca.neg.mat, neg.est.m, neg.est.result, pos.est.m, pos.est.result, neg.top, pos.top, file="Glance_afternorm_batch_lm_top.RData")
+```
+nothing significant at all!
+
+##try regular t-test
+```{r}
+#negative
+rownames(neg.est.m) <- colnames(neg.afternorm)[6:1531]
+colnames(neg.est.m) <- neg.afternorm[,5]
+
+```
+
+```{r paired t testing,echo=FALSE,cache=TRUE}
+
+table(colnames(neg.est.m)==info.all$marker)
+info.all$id <- as.character(info.all$id)
+info.all[1,]
+table(table(info.all$id))
+case.m <- neg.est.m[,info.all$case==1]
+ctrl.m <- neg.est.m[,info.all$case==0]
+
+case.info <- info.all[info.all$case==1,]
+ctrl.info <- info.all[info.all$case==0,]
+
+table(case.info$id==ctrl.info$id)
+
+p.t <- sapply(1:nrow(case.m),function(x) t.test(case.m[x,],ctrl.m[x,],paired=T)$p.value)
+
+effect.size <- sapply(1:nrow(case.m),function(x) (mean(case.m[x,],na.rm=T)-mean(ctrl.m[x,],na.rm=T))/sd(ctrl.m[x,],na.rm=T))
+qvalue <- qvalue(p.t,robust=T)$qvalues
+p.t.bh<-p.adjust(p.t, method = "BH")
+
+plot(effect.size,p.t,pch=19,col="blue",xlab="Effect Size",ylab="p value paired T",main=paste(sum(info.all$case==1)," GC treated vs. ",sum(info.all$case==0)," Placebo",sep=""))
+
+plot(effect.size,p.t.bh,pch=19,col="blue",xlab="Effect Size",ylab="p value paired T",main=paste(sum(info.all$case==1)," GC treated vs. ",sum(info.all$case==0)," Placebo",sep=""))
+
+plot(effect.size,qvalue,pch=19,col="blue",xlab="Effect Size",ylab="p value paired T",main=paste(sum(info.all$case==1)," GC treated vs. ",sum(info.all$case==0)," Placebo",sep=""))
+
+plot(result$result$coef,result$result$pvalue,pch=19,col="blue",xlab="coef",ylab="p",main=paste(sum(info.all$case==1)," GC treated vs. ",sum(info.all$case==0)," Placebo",sep=""))
+```
+
+
+##pathway analysis
+```{r}
+rm(list=ls())
+load("Glance_afternorm_batch_lm_top.RData")
+
+neg.compound.name = colnames(neg.afternorm)[6:1531]
+neg.top.name = cbind(neg.compound.name, neg.top)
+
+pos.compound.name = colnames(pos.afternorm)[6:1517]
+pos.top.name = cbind(pos.compound.name, pos.top)
+
+write.csv(neg.top.name, row.names=F, file="neg_top_name.csv")
+write.csv(pos.top.name, file="pos_top_name.csv")
+
+#MetaMapR
+library(shiny)
+shiny::runGitHub('MetaMapR','dgrapov')
 ```
 
 ## R Markdown
