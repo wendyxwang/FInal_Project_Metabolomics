@@ -1,0 +1,105 @@
+---
+title: "test"
+author: "wendyxwang"
+date: "Monday, June 01, 2015"
+output: html_document
+---
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+neg.test = read.csv("Neg.csv", header=T, sep=",", na.strings=".", check.names=FALSE)
+dim(neg.test)
+sum(is.na(neg.test))
+neg.test2 = apply(neg.test[,2:1530],2,function(x) ifelse(is.na(x),min(x, na.rm=T)/2,x))
+sum(is.na(neg.test2))
+min(neg.test[,2])
+min(neg.test2[,1])
+
+min(neg.test[,1530], na.rm=T)
+min(neg.test2[,1529])
+#correctly imputed
+```
+
+```{r}
+neg.test2 = data.frame(neg.test2)
+neg.QC.test = cbind(ID, neg.test2)
+
+neg.QC.test = neg.QC.test[which(neg.QC.test$ID!="80013"),]
+neg.QC.test = neg.QC.test[which(neg.QC.test$ID!="80025"),]
+
+log.neg.QC.test = log(neg.QC.test[,2:1530])
+neg.norm.QC.test = apply(log.neg.QC.test,2,function(x) (x-mean(x[sample.QC$QC==1]))/sd(x[sample.QC$QC==1]))
+
+neg.norm.QC.test = neg.norm.QC.test[which(substr(sample.QC$id,1,2)!="QC"),]
+
+neg.norm.test <- apply(neg.norm.QC.test,2,function(x) (x-mean(x[sample.QC$case==0]))/sd(x[sample.QC$case==0]))
+
+mean(neg.norm.test[,1][sample.QC$case==0])
+sd(neg.norm.test[,1][sample.QC$case==0])
+
+hist(neg.norm.test[,1][sample.QC$case==0])
+hist(neg.norm.test[,1][sample.QC$case==1])
+
+hist(neg.norm[,1][sample.QC$case==0])
+hist(neg.norm[,1][sample.QC$case==1])
+
+hist(neg.norm.test[,1529][sample.QC$case==0])
+hist(neg.norm.test[,1529][sample.QC$case==1])
+
+hist(neg.norm[,1529][sample.QC$case==0])
+hist(neg.norm[,1529][sample.QC$case==1])
+```
+
+
+#try imputation at last
+```{r}
+dev.off()
+neg.new = read.csv("Neg.csv", header=T, sep=",", na.strings=".", check.names=FALSE)
+dim(neg.new)
+sum(is.na(neg.new))
+```
+
+```{r}
+neg.new = cbind(ID, neg.new)
+
+neg.new = neg.new[which(neg.new$ID!="80013"),]
+neg.new = neg.new[which(neg.new$ID!="80025"),]
+
+log.neg.new = log(neg.new[,3:1531])
+sum(is.na(log.neg.new))
+neg.norm.new = apply(log.neg.new,2,function(x) (x-mean(x[sample.QC$QC==1], na.rm=T))/sd(x[sample.QC$QC==1], na.rm=T))
+
+neg.norm.new = neg.norm.new[which(substr(sample.QC$id,1,2)!="QC"),]
+
+neg.norm.new2 = apply(neg.norm.new,2,function(x) (x-mean(x[sample.QC$case==0],na.rm=T))/sd(x[sample.QC$case==0],na.rm=T))
+
+mean(neg.norm.new2[,1][sample.QC$case==0])
+sd(neg.norm.new2[,1][sample.QC$case==0])
+
+hist(neg.norm.new2[,1][sample.QC$case==0])
+hist(neg.norm.new2[,1][sample.QC$case==1])
+
+hist(neg.norm[,1][sample.QC$case==0])
+hist(neg.norm[,1][sample.QC$case==1])
+
+hist(neg.norm.new2[,1529][sample.QC$case==0])
+hist(neg.norm.new2[,1529][sample.QC$case==1])
+
+hist(neg.norm[,1529][sample.QC$case==0])
+hist(neg.norm[,1529][sample.QC$case==1])
+```
+
+```{r}
+neg.new.im = apply(neg.norm.new2,2,function(x) ifelse(is.na(x),(min(x, na.rm=T))/2,x))
+sum(is.na(neg.new.im))
+
+list.min = apply(neg.norm.new2, 2, function(x) min(x, na.rm=T)/2)
+list.min[1520:1529]
+
+min(neg.norm.new2[,1529],na.rm=T)
+min(neg.new.im[,1529])
+#correctly imputed
+```

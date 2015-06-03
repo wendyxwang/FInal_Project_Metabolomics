@@ -1,0 +1,434 @@
+---
+title: "Final Plan"
+author: "wendyxwang"
+date: "Tuesday, June 02, 2015"
+output: html_document.
+---
+
+Data preprocessing and analyses have changed:
+1. Log-transform the data
+2. Check boxplots of 5 QC's -> check the array performance
+3. Remove data with >50% missing
+4. For the rest of missing, impute with 1/2 minimum value
+5. Boxplot of the subjects.
+6. Histogram of the metabolites (first 5 by case status)
+7. Wilcoxon Rank Test: paired, tied, no correction for continuity, effec size
+8. Exploratory:
+8.1 PCA
+8.2 Clustering
+
+## import all the data
+```{r}
+rm(list=ls())
+
+setwd("E:/Course2015Spring/BIOST578/Project/FInal_Project_Metabolomics/Data")
+
+#read in subject demographics
+library(xlsx)
+demographics = read.xlsx("Subjects.xlsx",1)
+colnames(demographics) = c("ID","baseline","order","age","sex","weight","height","bmi","bodyfat","notes")
+summary(demographics)
+
+#read in sample position and glucose
+sample = read.csv("Glance_global_key_samples.csv", header=T, sep=",")
+colnames(sample)
+sample = sample[,1:3]
+
+#read in negative results
+neg = read.csv("Neg.csv", header=T, sep=",", na.strings=".", check.names=FALSE)
+dim(neg)
+#36 1530
+sum(is.na(neg))
+# 19995
+
+#read in positive results
+pos = read.csv("Pos.csv", header=T, sep=",", na.strings=".", check.names=FALSE)
+dim(pos)
+#36 1516
+sum(is.na(pos))
+#19123
+
+#Save RData
+save.image(file="Glance.RData")
+```
+
+##Exclude 80013 and 80025
+```{r}
+colnames(sample)
+
+sample.QC = sample[!is.na(sample[,1]),]
+dim(sample.QC)
+ID = sample.QC$id
+
+neg.QC = cbind(ID, neg)
+pos.QC = cbind(ID, pos)
+
+#exclude ill person
+sample.QC = sample.QC[which(sample.QC$id!="80013"),]
+neg.QC = neg.QC[which(neg.QC$ID!="80013"),]
+pos.QC = pos.QC[which(pos.QC$ID!="80013"),]
+
+#exclude drop-out
+sample.QC = sample.QC[which(sample.QC$id!="80025"),]
+neg.QC = neg.QC[which(neg.QC$ID!="80025"),]
+pos.QC = pos.QC[which(pos.QC$ID!="80025"),]
+
+table(sample.QC$id)
+#now we have 5 QCs and 14 pairs
+
+save(demographics, sample.QC, neg.QC, pos.QC, file="Glance_drop.RData")
+```
+
+# 1. Log-transform the data
+```{r}
+rm(list=ls())
+
+load("Glance_drop.RData")
+
+log.neg.QC = log(neg.QC[,3:1531])
+log.pos.QC = log(pos.QC[,3:1517])
+
+sum(is.na(log.neg.QC))
+# 18616
+sum(is.na(log.pos.QC))
+#17663
+```
+
+# 2. Check boxplots of 5 QC's -> check the array performance
+```{r}
+rowname.QC = paste("QC", c(1:5), sep="")
+#negative
+QC = log.neg.QC[which(substr(sample.QC$id,1,2)=="QC"),]
+rownames(QC) = rowname.QC
+boxplot(t(QC))
+
+#positive
+QC = log.pos.QC[which(substr(sample.QC$id,1,2)=="QC"),]
+rownames(QC) = rowname.QC
+boxplot(t(QC))
+
+save(demographics, sample.QC, neg.QC, pos.QC, log.neg.QC, log.pos.QC, file="Glance_log_QCcheck.RData")
+```
+Array behaved well.
+
+#3. Remove data with >50% missing
+```{r}
+#first remove QCs, they are done.
+sample.QC = sample.QC[which(substr(sample.QC$id,1,2)!="QC"),]
+log.neg.QC = log.neg.QC[which(substr(sample.QC$id,1,2)!="QC"),]
+log.pos.QC = log.pos.QC[which(substr(sample.QC$id,1,2)!="QC"),]
+
+ID.marker = neg.QC[,c(1:2)][which(substr(neg.QC$ID,1,2)!="QC"),]
+
+#neg
+filter.neg = apply(log.neg.QC, 2, function(x) sum(is.na(x)))
+summary(filter.neg)
+table(filter.neg)
+#482 metabolites have >14 NA's
+neg.f = log.neg.QC[,which(filter.neg<=14)]
+#now have 1047
+
+#pos
+filter.pos = apply(log.pos.QC, 2, function(x) sum(is.na(x)))
+summary(filter.pos)
+table(filter.pos)
+#523 metabolites have >14 NA's
+pos.f = log.pos.QC[,which(filter.pos<=14)]
+#now have 992
+
+save(demographics, sample.QC, ID.marker, neg.f, pos.f, file="Glance_dropmissing.RData")
+```
+
+#4. For the rest of missing, impute with 1/2 minimum value
+```{r}
+rm(list=ls())
+
+load("Glance_dropmissing.RData")
+
+#neg
+sum(is.na(neg.f))
+#6921
+neg.min = apply(neg.f, 2, function(x) min(x, na.rm=T))
+
+neg.im = apply(neg.f,2,function(x) ifelse(is.na(x),min(x, na.rm=T)/2,x))
+sum(is.na(neg.im))
+neg.min.im = apply(neg.im, 2, function(x) min(x))
+
+neg.min[1041:1047]
+neg.min.im[1041:1047]
+
+#pos
+sum(is.na(pos.f))
+#5180
+pos.min = apply(pos.f, 2, function(x) min(x, na.rm=T))
+
+pos.im = apply(pos.f,2,function(x) ifelse(is.na(x),min(x, na.rm=T)/2,x))
+sum(is.na(pos.im))
+neg.pos.im = apply(pos.im, 2, function(x) min(x))
+
+pos.min[985:992]
+neg.pos.im[985:992]
+
+save(demographics, sample.QC, ID.marker, neg.im, pos.im, file="Glance_impute.RData")
+```
+
+#5. Boxplot of the subjects.
+```{r}
+rm(list=ls())
+
+load("Glance_impute.RData")
+
+sample.QC$case <- factor(sample.QC$intervention,levels=c(1,2))
+levels(sample.QC$case) <- c(0,1)
+table(sample.QC$case,sample.QC$intervention)
+
+boxplot(t(neg.im))
+boxplot(t(pos.im))
+
+par(mfrow=c(2,2))
+boxplot(t(neg.im[which(sample.QC$case==1),]),main="Negative G&C")
+boxplot(t(pos.im[which(sample.QC$case==1),]),main="Positive G&C")
+boxplot(t(neg.im[which(sample.QC$case==0),]),main="Negative Placebo")
+boxplot(t(pos.im[which(sample.QC$case==0),]),main="Positive Placebo")
+
+dev.off()
+
+```
+
+#6. Histogram of the metabolites (first 5)
+```{r}
+par(mfrow=c(2,5))
+hist(neg.im[,1], main="M1", xlab="negative")
+hist(neg.im[,2], main="M2", xlab="negative")
+hist(neg.im[,3], main="M3", xlab="negative")
+hist(neg.im[,4], main="M4", xlab="negative")
+hist(neg.im[,5], main="M5", xlab="negative")
+
+hist(pos.im[,1], main="M1", xlab="positive")
+hist(pos.im[,2], main="M2", xlab="positive")
+hist(pos.im[,3], main="M3", xlab="positive")
+hist(pos.im[,4], main="M4", xlab="positive")
+hist(pos.im[,5], main="M5", xlab="positive")
+
+#by case
+#neg
+par(mfrow=c(2,5))
+hist(neg.im[,1][sample.QC$case==1], main="M1", xlab="G&C")
+hist(neg.im[,2][sample.QC$case==1], main="M2", xlab="G&C")
+hist(neg.im[,3][sample.QC$case==1], main="M3", xlab="G&C")
+hist(neg.im[,4][sample.QC$case==1], main="M4", xlab="G&C")
+hist(neg.im[,5][sample.QC$case==1], main="M5", xlab="G&C")
+
+hist(neg.im[,1][sample.QC$case==0], main="M1", xlab="Placebo")
+hist(neg.im[,2][sample.QC$case==0], main="M2", xlab="Placebo")
+hist(neg.im[,3][sample.QC$case==0], main="M3", xlab="Placebo")
+hist(neg.im[,4][sample.QC$case==0], main="M4", xlab="Placebo")
+hist(neg.im[,5][sample.QC$case==0], main="M5", xlab="Placebo")
+
+#pos
+par(mfrow=c(2,5))
+hist(pos.im[,1][sample.QC$case==1], main="M1", xlab="G&C")
+hist(pos.im[,2][sample.QC$case==1], main="M2", xlab="G&C")
+hist(pos.im[,3][sample.QC$case==1], main="M3", xlab="G&C")
+hist(pos.im[,4][sample.QC$case==1], main="M4", xlab="G&C")
+hist(pos.im[,5][sample.QC$case==1], main="M5", xlab="G&C")
+
+hist(pos.im[,1][sample.QC$case==0], main="M1", xlab="Placebo")
+hist(pos.im[,2][sample.QC$case==0], main="M2", xlab="Placebo")
+hist(pos.im[,3][sample.QC$case==0], main="M3", xlab="Placebo")
+hist(pos.im[,4][sample.QC$case==0], main="M4", xlab="Placebo")
+hist(pos.im[,5][sample.QC$case==0], main="M5", xlab="Placebo")
+
+dev.off()
+
+save(demographics, sample.QC, ID.marker, neg.im, pos.im, file="Glance_ready.RData")
+```
+
+#7. Wilcoxon Rank Test: paired, tied, no correction for continuity, effec size
+```{r}
+rm(list=ls())
+
+load("Glance_ready.RData")
+
+library(coin)
+
+case = sample.QC$case
+
+#neg
+neg.wilcox = apply(neg.im, 2, function(x) wilcoxsign_test(x[which(case==1)] ~ x[which(case==0)], zero.method="Wilcoxon", distribution="asympt"))
+neg.p = unlist(lapply(neg.wilcox, function(x) pvalue(x)))
+neg.es = unlist(lapply(neg.wilcox, function(x) statistic(x)))
+
+list(neg.wilcox[[1]])
+
+hist(neg.p)
+hist(neg.es)
+
+#pos
+pos.wilcox = apply(pos.im, 2, function(x) wilcoxsign_test(x[which(case==1)] ~ x[which(case==0)], zero.method="Wilcoxon", distribution="asympt"))
+pos.p = unlist(lapply(pos.wilcox, function(x) pvalue(x)))
+pos.es = unlist(lapply(pos.wilcox, function(x) statistic(x)))
+
+list(pos.wilcox[[1]])
+
+hist(pos.p)
+hist(pos.es)
+
+par(mfrow=c(2,2))
+hist(neg.p, freq=F, main="Unadjusted p-values (Negative)", xlab='p-values', breaks=50)
+abline(v=0.05, col=2, lwd=2, lty=2)
+hist(neg.es, freq=F, main="Test statistics (Negative)", xlab="z-scores", breaks=50)
+hist(pos.p, freq=F, main="Unadjusted p-values (Positive)", xlab='p-values', breaks=50)
+abline(v=0.05, col=2, lwd=2, lty=2)
+hist(pos.es, freq=F, main="Test statistics (Positive)", xlab="z-scores", breaks=50)
+
+dev.off()
+
+#create result datasets
+neg.result = cbind(neg.es, neg.p)
+pos.result = cbind(pos.es, pos.p)
+
+#clean the rownames
+rownames(neg.result) = colnames(neg.im)
+rownames(pos.result) = colnames(pos.im)
+
+
+save(demographics, sample.QC, ID.marker, neg.im, pos.im, neg.wilcox, pos.wilcox, neg.result, pos.result, file="Glance_afterWilcox.RData")
+```
+
+```{r}
+
+#unadjusted p<0.05
+neg.unadj.p = neg.result[which(data.frame(neg.result)$neg.p<0.05),]
+neg.unadj.p = neg.unadj.p[order(data.frame(neg.unadj.p)$neg.p),]
+#27
+pos.unadj.p = pos.result[which(data.frame(pos.result)$pos.p<0.05),]
+pos.unadj.p = pos.unadj.p[order(data.frame(pos.unadj.p)$pos.p),]
+#39
+
+#fdr adjustment
+neg.p.adjust = p.adjust(data.frame(neg.result)$neg.p, method ="BH")
+summary(neg.p.adjust)
+
+pos.p.adjust = p.adjust(data.frame(pos.result)$pos.p, method ="BH")
+summary(pos.p.adjust)
+#nothing significant
+
+#what if we order p-value first
+#neg.result = data.frame(neg.result)
+#neg.result = neg.result[order(neg.result$neg.p),]
+#neg.p.adj = p.adjust(neg.result$neg.p, method="BH")
+#summary(neg.p.adj)
+#exactly the same
+
+write.csv(neg.unadj.p, row.names=T,file="Negative_unadjusted_pvalues.csv")
+write.csv(pos.unadj.p, row.names=T,file="Positive_unadjusted_pvalues.csv")
+```
+
+## 8. Exploratory:
+# 8.1 PCA
+```{r}
+#use imputed data
+rm(list=ls())
+
+load("Glance_afterWilcox.RData")
+
+
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+library(RColorBrewer)
+
+neg.pr.out = prcomp (neg.im, scale =TRUE)
+neg.pr.out$rotation[1:5,1:5]
+pca.scores.neg = neg.pr.out$x
+
+sample.QC$caseid = paste(sample.QC$case, sample.QC$id, sep=".")
+rownames(pca.scores.neg) <- sample.QC$caseid
+
+#by case
+demo.select = demographics[which(demographics$ID!="80013"),]
+demo.select = demo.select[which(demo.select$ID!="80025"),]
+demo.select = demo.select[-c(1:4),]
+info.temp = merge(sample.QC, demo.select, by.x="id", by.y="ID", all=T)
+info.temp = info.temp[,-14]
+info.all = merge(info.temp, ID.marker, by.x="id", by.y="ID", all=T)
+
+pca.neg.mat = cbind(info.all,pca.scores.neg)
+pca.neg.mat$case = as.factor(pca.neg.mat$case)
+pca.neg.mat$sex = factor(pca.neg.mat$sex, levels = c(0,1), labels = c("female", "male"))
+pca.neg.mat$order = factor(pca.neg.mat$order, levels = c(1,2), labels = c("AB", "BA"))
+
+neg.pca1 = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=case)) + geom_point(shape=16,size=3, aes(colour=case)) + ggtitle("PCA for negative metabolites by case") + theme(panel.background = element_blank())
+neg.pca2 = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC3, color=case)) + geom_point(shape=16,size=3) + ggtitle("PCA for negative metabolites by case") + theme(panel.background = element_blank())
+neg.pca3 = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC3, color=case)) + geom_point(shape=16,size=3) + ggtitle("PCA for negative metabolites by case") + theme(panel.background = element_blank())
+neg.pca4 = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC4, color=case)) + geom_point(shape=16,size=3) + ggtitle("PCA for negative metabolites by case") + theme(panel.background = element_blank())
+
+grid.arrange(neg.pca1, neg.pca2, neg.pca3, neg.pca4, ncol=2)
+
+#pos
+pos.pr.out = prcomp (pos.im, scale =TRUE)
+pos.pr.out$rotation[1:5,1:5]
+pca.scores.pos = pos.pr.out$x
+
+rownames(pca.scores.pos) <- sample.QC$caseid
+
+pca.pos.mat = cbind(info.all,pca.scores.pos)
+pca.pos.mat$case = as.factor(pca.pos.mat$case)
+pca.pos.mat$sex = factor(pca.pos.mat$sex, levels = c(0,1), labels = c("female", "male"))
+pca.pos.mat$order = factor(pca.pos.mat$order, levels = c(1,2), labels = c("AB", "BA"))
+
+pos.pca1 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=case)) + geom_point(shape=16,size=3, aes(colour=case)) + ggtitle("PCA for positive metabolites by case") + theme(panel.background = element_blank())
+pos.pca2 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC3, color=case)) + geom_point(shape=16,size=3) + ggtitle("PCA for positive metabolites by case") + theme(panel.background = element_blank())
+pos.pca3 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC3, color=case)) + geom_point(shape=16,size=3) + ggtitle("PCA for positive metabolites by case") + theme(panel.background = element_blank())
+pos.pca4 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC4, color=case)) + geom_point(shape=16,size=3) + ggtitle("PCA for positive metabolites by case") + theme(panel.background = element_blank())
+
+grid.arrange(pos.pca1, pos.pca2, pos.pca3, pos.pca4, ncol=2)
+
+#by sex and case
+
+pca.plot.neg = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=sex, shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites by sex") + theme(panel.background = element_blank())
+
+pos.pr.out = prcomp(pos.afternorm[,6:1517], scale=TRUE)
+pos.pr.out$rotation[1:5,1:5]
+pca.scores.pos = pos.pr.out$x
+rownames(pca.scores.pos) = pos.afternorm$marker
+pca.pos.mat = cbind(info.all, pca.scores.pos)
+pca.pos.mat$sex = info.all$sex
+
+pca.plot.pos = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=sex, shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites by sex") + theme(panel.background = element_blank())
+
+grid.arrange(pca.plot.neg, pca.plot.pos, ncol=2)
+
+#by order
+table(info.all$order)
+
+pca.neg.mat$order = info.all$order
+pca.pos.mat$order = info.all$order
+
+pca.plot.neg2 = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=order, shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites by order") + theme(panel.background = element_blank())
+
+pca.plot.pos2 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=order, shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites by order") + theme(panel.background = element_blank())
+
+grid.arrange(pca.plot.neg2, pca.plot.pos2, ncol=2)
+
+#by bmi
+info.all$bmi_c = NULL
+info.all$bmi_c = ifelse(info.all$bmi>29.9, 1, 0)
+info.all$bmi_c = factor(info.all$bmi_c, levels = c(0,1), labels = c("overweight", "obese"))
+table(info.all$bmi_c)
+
+pca.neg.mat$bmi_c = info.all$bmi_c
+pca.pos.mat$bmi_c = info.all$bmi_c
+
+pca.plot.neg3 = ggplot(data=pca.neg.mat,aes(x=PC1, y=PC2, color=bmi_c, shape=case)) + geom_point(size=3) + ggtitle("PCA for negative metabolites by BMI") + theme(panel.background = element_blank())
+
+pca.plot.pos3 = ggplot(data=pca.pos.mat,aes(x=PC1, y=PC2, color=bmi_c, shape=case)) + geom_point(size=3) + ggtitle("PCA for positive metabolites by BMI") + theme(panel.background = element_blank())
+
+grid.arrange(pca.plot.neg3, pca.plot.pos3, ncol=2)
+
+#save RData
+save(demographics, sample.QC, info.marker, neg.lt, pos.lt, neg.afternorm, pos.afternorm, info.all, pca.pos.mat, pca.neg.mat, file="Glance_afternorm_batch.RData")
+
+```
+8.2 Clustering
