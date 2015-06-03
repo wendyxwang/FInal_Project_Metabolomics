@@ -33,17 +33,19 @@ colnames(sample)
 sample = sample[,-4]
 
 #read in negative results
-neg = read.csv("Neg.csv", header=T, sep=",", na.strings=".")
+neg = read.csv("Neg.csv", header=T, sep=",", na.strings=".", check.names=FALSE)
 dim(neg)
 sum(is.na(neg))
+# 19995
 #impute all NA's with 1
 neg[is.na(neg)] = 1
 sum(neg == 1)
 
 #read in positive results
-pos = read.csv("Pos.csv", header=T, sep=",", na.strings=".")
+pos = read.csv("Pos.csv", header=T, sep=",", na.strings=".", check.names=FALSE)
 dim(pos)
 sum(is.na(pos))
+#19123
 pos[is.na(pos)] = 1
 sum(pos == 1)
 
@@ -52,18 +54,16 @@ save.image(file="Glance.RData")
 ```
 
 
-##Combine the dataset
+##Exclude 80013 and 80025
 ```{r}
 colnames(sample)
 sample = sample[,1:5]
 sample.QC = sample[!is.na(sample[,1]),]
 dim(sample.QC)
-neg$ID = sample.QC$id
-pos$ID = sample.QC$id
+ID = sample.QC$id
 
-sample.QC = sample.QC[which(substr(sample.QC$id,1,2)!="QC"),]
-neg.QC = neg[which(substr(sample.QC$id,1,2)!="QC"),]
-pos.QC = pos[which(substr(sample.QC$id,1,2)!="QC"),]
+neg.QC = cbind(ID, neg)
+pos.QC = cbind(ID, pos)
 
 #exclude ill person
 sample.QC = sample.QC[which(sample.QC$id!="80013"),]
@@ -75,61 +75,157 @@ sample.QC = sample.QC[which(sample.QC$id!="80025"),]
 neg.QC = neg.QC[which(neg.QC$ID!="80025"),]
 pos.QC = pos.QC[which(pos.QC$ID!="80025"),]
 
+table(sample.QC$id)
+#now we have 5 QCs and 14 pairs
+```
+
+
+##Standardize the data based on QCs
+```{r}
+sample.QC$QC = ifelse(sample.QC$intervention==0, 1, 0)
+sample.QC$QC = as.factor(sample.QC$QC)
+table(sample.QC$QC)
+
+# change factor to numeric
+#neg.QC[,c(3:1531)] = sapply(neg.QC[,c(3:1531)], as.numeric)
+
+# log-transform all the data
+log.neg.QC = log(neg.QC[,3:1531])
+log.pos.QC = log(pos.QC[,3:1517])
+
+## standardize on QC
+# negative
+hist(log.neg.QC[,1])
+
+neg.norm.QC <- apply(log.neg.QC,2,function(x) (x-mean(x[sample.QC$QC==1]))/sd(x[sample.QC$QC==1]))
+mean(neg.norm.QC[,1][sample.QC$QC==1])
+sd(neg.norm.QC[,1][sample.QC$QC==1])
+#QCs are standardized
+
+# positive
+hist(log.pos.QC[,1])
+
+pos.norm.QC <- apply(log.pos.QC,2,function(x) (x-mean(x[sample.QC$QC==1]))/sd(x[sample.QC$QC==1]))
+mean(pos.norm.QC[,1][sample.QC$QC==1])
+sd(pos.norm.QC[,1][sample.QC$QC==1])
+#QCs are standardized
+
+
+#now we can exlucde QCs
+sample.QC = sample.QC[which(substr(sample.QC$id,1,2)!="QC"),]
+neg.norm.QC = neg.norm.QC[which(substr(sample.QC$id,1,2)!="QC"),]
+pos.norm.QC = pos.norm.QC[which(substr(sample.QC$id,1,2)!="QC"),]
 ```
 now, we have 14 pairs for analyses.
 
 
 ##Standardize the data according to placebos
 ```{r}
-hist(neg.QC[,2])
-#log-transform all the data
+hist(neg.norm.QC[,1])
+hist(pos.norm.QC[,1])
+
+
 sample.QC$case <- factor(sample.QC$intervention,levels=c(1,2))
 levels(sample.QC$case) <- c(0,1)
 table(sample.QC$case,sample.QC$intervention)
 
 info = sample.QC[,-c(4:5)]
-marker = neg.QC[,1]
+neg.QC = neg.QC[which(substr(neg.QC$ID, 1, 2)!="QC"),]
+marker = neg.QC[,2]
+info.marker = cbind(info, marker)
 
-log.neg = log(neg.QC[,2:1530])
-neg.lt = cbind(info,marker,log.neg)
+#standardized on controls
+table(sample.QC$case)
 
-log.pos = log(pos.QC[,2:1516])
-pos.lt = cbind(info,marker,log.pos)
+hist(neg.norm.QC[,1][sample.QC$case==0])
+hist(neg.norm.QC[,1][sample.QC$case==1])
 
-save(demographics, sample.QC, info, marker, neg.lt, pos.lt, file="Glance_logtrans.RData")
+neg.norm <- apply(neg.norm.QC,2,function(x) (x-mean(x[sample.QC$case==0]))/sd(x[sample.QC$case==0]))
+mean(neg.norm[,1][sample.QC$case==0])
+sd(neg.norm[,1][sample.QC$case==0])
+#controls standardized
+mean(neg.norm[,1][sample.QC$case==1])
+sd(neg.norm[,1][sample.QC$case==1])
+#cases not
+hist(neg.norm[,1][sample.QC$case==0])
+hist(neg.norm[,1][sample.QC$case==1])
+
+#plotting first 5 metabolites
+library(ggplot2)
+library(gridExtra)
+
+dev.off()
+par(mfrow=c(2,5))
+hist.ctrl.neg1 = hist(neg.norm[,1][sample.QC$case==0], main= paste(colnames(neg.norm)[1]), xlab="Placebo")
+hist.ctrl.neg2 = hist(neg.norm[,2][sample.QC$case==0], main= paste(colnames(neg.norm)[2]), xlab="Placebo")
+hist.ctrl.neg3 = hist(neg.norm[,3][sample.QC$case==0], main= paste(colnames(neg.norm)[3]), xlab="Placebo")
+hist.ctrl.neg4 = hist(neg.norm[,4][sample.QC$case==0], main= paste(colnames(neg.norm)[4]), xlab="Placebo")
+hist.ctrl.neg5 = hist(neg.norm[,5][sample.QC$case==0], main= paste(colnames(neg.norm)[5]), xlab="Placebo")
+
+hist.case.neg1 = hist(neg.norm[,1][sample.QC$case==1], xlab="G&C", main="")
+hist.case.neg2 = hist(neg.norm[,2][sample.QC$case==1], xlab="G&C", main="")
+hist.case.neg3 = hist(neg.norm[,3][sample.QC$case==1], xlab="G&C", main="")
+hist.case.neg4 = hist(neg.norm[,4][sample.QC$case==1], xlab="G&C", main="")
+hist.case.neg5 = hist(neg.norm[,5][sample.QC$case==1], xlab="G&C", main="")
+
+neg.afternorm = cbind(info.marker,neg.norm)
+
+#positive
+dev.off()
+hist(pos.norm.QC[,1][sample.QC$case==0])
+hist(pos.norm.QC[,1][sample.QC$case==1])
+
+pos.norm <- apply(pos.norm.QC,2,function(x) (x-mean(x[sample.QC$case==0]))/sd(x[sample.QC$case==0]))
+mean(pos.norm[,1][sample.QC$case==0])
+sd(pos.norm[,1][sample.QC$case==0])
+#controls standardized
+mean(pos.norm[,1][sample.QC$case==1])
+sd(neg.norm[,1][sample.QC$case==1])
+#cases not
+hist(pos.norm[,1][sample.QC$case==0])
+hist(pos.norm[,1][sample.QC$case==1])
+
+#plotting first 5 metabolites
+par(mfrow=c(2,5))
+hist.ctrl.pos1 = hist(pos.norm[,1][sample.QC$case==0], main= paste(colnames(pos.norm)[1]), xlab="Placebo")
+hist.ctrl.pos2 = hist(pos.norm[,2][sample.QC$case==0], main= paste(colnames(pos.norm)[2]), xlab="Placebo")
+hist.ctrl.pos3 = hist(pos.norm[,3][sample.QC$case==0], main= paste(colnames(pos.norm)[3]), xlab="Placebo")
+hist.ctrl.pos4 = hist(pos.norm[,4][sample.QC$case==0], main= paste(colnames(pos.norm)[4]), xlab="Placebo")
+hist.ctrl.pos5 = hist(pos.norm[,5][sample.QC$case==0], main= paste(colnames(pos.norm)[5]), xlab="Placebo")
+
+hist.case.pos1 = hist(pos.norm[,1][sample.QC$case==1], xlab="G&C", main="")
+hist.case.pos2 = hist(pos.norm[,2][sample.QC$case==1], xlab="G&C", main="")
+hist.case.pos3 = hist(pos.norm[,3][sample.QC$case==1], xlab="G&C", main="")
+hist.case.pos4 = hist(pos.norm[,4][sample.QC$case==1], xlab="G&C", main="")
+hist.case.pos5 = hist(pos.norm[,5][sample.QC$case==1], xlab="G&C", main="")
+
+pos.afternorm = cbind(info.marker,pos.norm)
+
+#save data
+save(demographics, sample.QC, info.marker, neg.norm.QC, pos.norm.QC, neg.afternorm, pos.afternorm, file="Glance_afternorm.RData")
+
+#neg.lt = cbind(info,marker,log.neg)
+#pos.lt = cbind(info,marker,log.pos)
+
+#save(demographics, sample.QC, info, marker, neg.lt, pos.lt, file="Glance_logtrans.RData")
 ```
 
 ```{r}
-rm(list=ls())
+# rm(list=ls())
 
-load("Glance_logtrans.RData")
+# load("Glance_logtrans.RData")
 
-info.marker = neg.lt[,1:5]
+#info.marker = neg.lt[,1:5]
 
 #normalization
-table(sample.QC$case)
-
-hist(neg.lt[,6][sample.QC$case==0])
-hist(neg.lt[,6][sample.QC$case==1])
-
-neg.norm <- apply(neg.lt[,6:1531],2,function(x) (x-mean(x[sample.QC$case==0],na.rm=T))/sd(x[sample.QC$case==0],na.rm=T))
-mean(neg.norm[,1][sample.QC$case==0])
-mean(neg.norm[,1][sample.QC$case==1])
-neg.afternorm = cbind(info.marker,neg.norm)
 
 #code check: try a different method and get the same result
 #neg.lt.t = t(neg.lt[,-c(1:5)])
 #neg.norm.t = apply(neg.lt.t, 1, function(x) (x-mean(x[sample.QC$case==0]))/sd(x[sample.QC$case==00]))
 
-
-pos.norm <- apply(pos.lt[,6:1517],2,function(x) (x-mean(x[sample.QC$case==0],na.rm=T))/sd(x[sample.QC$case==0],na.rm=T))
-mean(pos.norm[,1][sample.QC$case==0])
-mean(pos.norm[,1][sample.QC$case==1])
-pos.afternorm = cbind(info.marker,pos.norm)
-
 #Save RData
 #decided to save non-normalized data for testing
-save(demographics, sample.QC, info.marker, neg.lt, pos.lt, neg.afternorm, pos.afternorm, file="Glance_afternorm.RData")
+#save(demographics, sample.QC, info.marker, neg.lt, pos.lt, neg.afternorm, pos.afternorm, file="Glance_afternorm.RData")
 ```
 
 ##check batch effect
@@ -157,12 +253,12 @@ head(batch.neg.merge[,c("id","sex","order","case","age")])
 
 ######the following plotting didn't work. Move on to PCA anyway.
 
-plotdata.neg<-melt(batch.neg.merge, id=c("id","case","marker","sex","intervention","poisiton","order","age", "weight","height","bmi","bodyfat"))
-p1 <- ggplot(plotdata.neg[plotdata.neg$sex==1,], aes(y=value,x=variable,fill=value)) + geom_tile() + scale_fill_gradient(low="lightblue", high="darkblue")+ xlab("metabolites") + ylab("obs")+theme(axis.ticks = element_blank(), axis.text.y = element_blank())+ggtitle("genes expression for male")
-p0 <- ggplot(plotdata.neg[plotdata.neg$sex==0,], aes(y=value,x=variable,fill=value)) + geom_tile() + scale_fill_gradient(low="lightblue", high="darkblue")+ xlab("metabolites") + ylab("obs")+theme(axis.ticks = element_blank(), axis.text.y = element_blank())+ggtitle("genes expression for female")
-grid.arrange( p0, p1, ncol=2)
+#plotdata.neg<-melt(batch.neg.merge, id=c("id","case","marker","sex","intervention","poisiton","order","age", "weight","height","bmi","bodyfat"))
+#p1 <- ggplot(plotdata.neg[plotdata.neg$sex==1,], aes(y=value,x=variable,fill=value)) + geom_tile() + scale_fill_gradient(low="lightblue", high="darkblue")+ xlab("metabolites") + ylab("obs")+theme(axis.ticks = element_blank(), axis.text.y = element_blank())+ggtitle("genes expression for male")
+#p0 <- ggplot(plotdata.neg[plotdata.neg$sex==0,], aes(y=value,x=variable,fill=value)) + geom_tile() + scale_fill_gradient(low="lightblue", high="darkblue")+ xlab("metabolites") + ylab("obs")+theme(axis.ticks = element_blank(), axis.text.y = element_blank())+ggtitle("genes expression for female")
+#grid.arrange( p0, p1, ncol=2)
 
-p1 = ggplot(plotdata.neg[plotdata.neg$sex==1,], aes(y=plotdata.neg$value, x=plotdata.neg$variable)) + geom_tile() +ggtitle("genes expression for male")
+#p1 = ggplot(plotdata.neg[plotdata.neg$sex==1,], aes(y=plotdata.neg$value, x=plotdata.neg$variable)) + geom_tile() +ggtitle("genes expression for male")
 
 ```
 
@@ -544,6 +640,106 @@ pos.top = top
 save(demographics, sample.QC, info.marker, neg.lt, pos.lt, neg.afternorm, pos.afternorm, info.all, pca.pos.mat, pca.neg.mat, neg.est.m, neg.est.result, pos.est.m, pos.est.result, neg.top, pos.top, file="Glance_afternorm_batch_lm_top.RData")
 ```
 nothing significant at all!
+
+#try afternorm data
+```{r}
+rm(list=ls())
+
+load("Glance_afternorm.RData")
+
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+library(limma)
+
+info.temp = info.marker
+est.m = t(neg.afternorm[,7:1535])
+mm <-model.matrix(~0+id+case, data=info.temp)
+colnames(mm)
+mm <- mm[,-7]
+colnames(mm)
+mm <- mm[, -(16:20)]
+mm <- mm[,-13]
+fit <- lmFit(est.m, mm)
+
+ebay <- eBayes(fit)
+top <- topTable(ebay, coef="case1", number=Inf, sort.by="p")
+head(top)
+mean(top$adj.P.Val<0.01)
+summary(top$adj.P.Val)
+summary(top$P.Value)
+hist(top$P.Value, freq=F, main="Histogram of unadjusted p-values", xlab='p-values', breaks=100)
+abline(v=0.05, col=2, lwd=2, lty=2)
+
+neg.top.unadj = top[which(top$P.Value<0.05),]
+#37
+
+
+#positive
+est.m = t(pos.afternorm[,7:1521])
+fit <- lmFit(est.m, mm)
+
+ebay <- eBayes(fit)
+top <- topTable(ebay, coef="case1", number=Inf, sort.by="p")
+head(top)
+mean(top$adj.P.Val<0.01)
+summary(top$adj.P.Val)
+summary(top$P.Value)
+hist(top$P.Value, freq=F, main="Histogram of unadjusted p-values", xlab='p-values', breaks=100)
+abline(v=0.05, col=2, lwd=2, lty=2)
+
+pos.top.unadj = top[which(top$P.Value<0.05),]
+#54
+
+save(demographics, info.marker, neg.norm.QC, pos.norm.QC, neg.afternorm, pos.afternorm, neg.top.unadj, pos.top.unadj, file="Glance_afternorm_unadjlimma.RData")
+```
+
+```{r}
+# heatmap
+library(gplots)
+library(reshape2)
+library(ggplot2)
+library(pheatmap)
+library(stats)
+library(RColorBrewer)
+
+neg.hm = neg.afternorm[,-c(1,3,4,6)]
+neg.hm = neg.hm[,-c(1:2)]
+ID = neg.afternorm$id
+case = neg.afternorm$case
+
+rownames = rownames(neg.hm)
+neg.hm = data.matrix(neg.hm)
+neg.hm = t(neg.hm)
+
+heatmap.2(neg.hm, Colv=NA, Rowv=NA, scale="none")
+
+select = rownames(neg.top.unadj)
+neg.hm.top = neg.hm[which(rownames(neg.hm) %in% select),]
+heatmap.2(neg.hm.top, scale="none")
+
+id.case = paste(ID,".",case, sep="")
+colnames(neg.hm.top) = id.case
+heatmap.2(neg.hm.top, scale="none")
+
+neg.hm.case = neg.hm.top[,which(case==1)]
+neg.hm.ctrl = neg.hm.top[,which(case==0)]
+neg.hm.top = cbind(neg.hm.case, neg.hm.ctrl)
+heatmap.2(neg.hm.top, Colv=NA, scale="none")
+
+my_palette <- colorRampPalette(c("red", "yellow", "green"))(n = 299)
+heatmap.2(neg.hm.top, Colv=NA, col=my_palette, margin=c(6,12), scale="none")
+dev.off()
+
+#clustering
+d = as.dist(neg.hm.top)
+d = as.dist(1 - cor(neg.hm.top))
+plot(hclust(d, method="complete"))
+plot(hclust(d, method="average"))
+plot(hclust(d, method="single"))
+
+
+```
 
 ##try regular t-test
 ```{r}
