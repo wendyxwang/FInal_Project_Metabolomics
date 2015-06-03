@@ -1,0 +1,81 @@
+---
+title: "Untitled"
+author: "wendyxwang"
+date: "Tuesday, June 02, 2015"
+output: html_document
+---
+
+setwd("E:/Course2015Spring/BIOST578/Project/FInal_Project_Metabolomics/Data")
+load("Glance_afternorm.RData")
+
+library(ggplot2)
+rownames = neg.afternorm$id
+box.neg = neg.afternorm[,-c(1:6)]
+box.neg = t(box.neg)
+colnames(box.neg) = rownames
+
+boxplot(box.neg)
+
+
+rm(list=ls())
+load("Glance.RData")
+
+
+```{r}
+library(genefilter)
+neg.tsts <- rowttests(t(as.matrix(neg.norm.QC)), fac=as.factor(sample.QC$case))
+dim(neg.tsts)
+hist(neg.tsts$p.value)
+
+rownames(neg.norm.QC) = sample.QC$id
+neg.norm.case = neg.norm.QC[which(sample.QC$case==1),]
+neg.norm.ctrl = neg.norm.QC[which(sample.QC$case==0),]
+
+neg.norm.combined = neg.norm.case - neg.norm.ctrl
+sum(neg.norm.combined==0)
+neg.test = rowttests(t(as.matrix(neg.norm.combined)))
+dim(neg.test)
+hist(neg.test$p.value)
+
+library(stats)
+neg.wilcox.p = apply(neg.norm.combined, 2, function(x) wilcox.test(x)$p.value)
+a = apply(neg.norm.QC, 2, function(x) wilcox.test(x[which(sample.QC$case==1)], x[which(sample.QC$case==0)], paired=T)$p.value)
+
+neg.raw = neg.QC[which(substr(sample.QC$id,1,2)!="QC"),-1]
+neg.raw = neg.raw[,-1]
+neg.p = apply(neg.raw, 2, function(x) wilcox.test(x[which(sample.QC$case==1)],x[which(sample.QC$case==0)], paired=T, na.rm=T)$p.value)
+```
+
+log.neg.t = t(log.neg.QC)
+boxplot(log.neg.t)
+
+neg.norm.QC.t = t(neg.norm.QC)
+boxplot(neg.norm.QC.t, ylim=c(-700,300))
+
+
+library(limma)
+
+info.temp = info
+est.m = t(neg.norm.QC)
+mm <-model.matrix(~0+id+case, data=info.temp)
+mm <- mm[,-7]
+mm <- mm[, -(16:20)]
+mm <- mm[,-13]
+fit <- lmFit(est.m, mm)
+
+
+
+ebay <- eBayes(fit)
+top <- topTable(ebay, coef="case1", number=Inf, sort.by="p")
+head(top)
+mean(top$adj.P.Val<0.01)
+summary(top$adj.P.Val)
+summary(top$P.Value)
+hist(top$P.Value, freq=F, main="Histogram of unadjusted p-values", xlab='p-values', breaks=100)
+abline(v=0.05, col=2, lwd=2, lty=2)
+
+neg.top = top
+
+
+
+
